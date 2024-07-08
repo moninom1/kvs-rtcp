@@ -8,6 +8,13 @@
 #include "rtcp_api.h"
 
 #define RTCP_READ_UINT32    ( ctx.readWriteFunctions.readUint32Fn )
+#define RTCP_HEADER_LENGTH                      4
+#define RTCP_PACKET_TYPE_FIR                            192 /* https://datatracker.ietf.org/doc/html/rfc2032#section-5.2.1 */
+#define RTCP_PACKET_TYPE_SENDER_REPORT                  200 /* https://datatracker.ietf.org/doc/html/rfc3550#section-6.4.1 */
+#define RTCP_PACKET_TYPE_RECEIVER_REPORT                201 /* https://datatracker.ietf.org/doc/html/rfc3550#section-6.4.2 */
+#define RTCP_PACKET_TYPE_SOURCE_DESCRIPTION             202
+#define RTCP_PACKET_TYPE_TRANSPORT_SPECIFIC_FEEDBACK    205 /* https://datatracker.ietf.org/doc/html/rfc4585#section-6.2 */
+#define RTCP_PACKET_TYPE_PAYLOAD_SPECIFIC_FEEDBACK      206 /* https://datatracker.ietf.org/doc/html/rfc4585#section-6.3 */
 
 static void deserialize_test1( void )
 {
@@ -24,30 +31,30 @@ static void deserialize_test1( void )
 
     // Assert that we don't parse buffers that aren't even large enough
     uint8_t headerTooSmall[] = {0x00, 0x00, 0x00};
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                headerTooSmall,
                                sizeof( headerTooSmall ),
                                &rtcpPacket );
-    assert( RTCP_RESULT_MALFORMED_PACKET == result );
+    assert( RTCP_RESULT_BAD_PARAM == result );
 
     // Assert that we check version field
     uint8_t invalidVersionValue[] = {0x01, 0xcd, 0x00, 0x03, 0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0, 0x00, 0xa4, 0x00, 0x00};
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                invalidVersionValue,
                                sizeof( invalidVersionValue ),
                                &rtcpPacket );
-    assert( RTCP_RESULT_WRONG_VERSION == result );
+    assert( RTCP_RESULT_MALFORMED_PACKET == result );
 
     // Assert that we check the length field
     uint8_t invalidLengthValue[] = {0x81, 0xcd, 0x00, 0x00, 0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0, 0x00, 0xa4, 0x00, 0x00};
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                invalidLengthValue,
                                sizeof( invalidLengthValue ),
                                &rtcpPacket );
     assert( RTCP_RESULT_OK == result );
 
     uint8_t validRtcpPacket[] = {0x81, 0xcd, 0x00, 0x03, 0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0, 0x00, 0xa4, 0x00, 0x00};
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                validRtcpPacket,
                                sizeof( validRtcpPacket ),
                                &rtcpPacket );
@@ -78,28 +85,28 @@ static void deserialize_test2( void )
                                  0x12, 0x2d, 0x97, 0x0c, 0xef, 0x37, 0x0d, 0x2d, 0x07, 0x3d, 0x1d };
 
     int currentOffset = 0;
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                compoundPacket + currentOffset,
                                sizeof( compoundPacket ) - currentOffset,
                                &rtcpPacket );
     assert( RTCP_RESULT_OK == result );
-    assert( rtcpPacket.header.packetType == RTCP_PACKET_TYPE_SENDER_REPORT );
+    assert( rtcpPacket.header.packetType == RTCP_PACKET_SENDER_REPORT );
 
     currentOffset += ( rtcpPacket.payloadLength + RTCP_HEADER_LENGTH );
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                compoundPacket + currentOffset,
                                sizeof( compoundPacket ) - currentOffset,
                                &rtcpPacket );
     assert( RTCP_RESULT_OK == result );
-    assert( rtcpPacket.header.packetType == RTCP_PACKET_TYPE_SOURCE_DESCRIPTION );
+    assert( rtcpPacket.header.packetType == RTCP_PACKET_UNKNOWN );
 
     currentOffset += ( rtcpPacket.payloadLength + RTCP_HEADER_LENGTH );
-    result = Rtcp_DeSerialize( &ctx,
+    result = Rtcp_DeSerializePacket( &ctx,
                                compoundPacket + currentOffset,
                                sizeof( compoundPacket ) - currentOffset,
                                &rtcpPacket );
     assert( RTCP_RESULT_OK == result );
-    assert( rtcpPacket.header.packetType == RTCP_PACKET_TYPE_PAYLOAD_SPECIFIC_FEEDBACK );
+    assert( rtcpPacket.header.packetType == RTCP_PACKET_PAYLOAD_FEEDBACK_REMB );
     currentOffset += ( rtcpPacket.payloadLength + RTCP_HEADER_LENGTH );
     assert( currentOffset == sizeof( compoundPacket ) );
 }
@@ -110,18 +117,18 @@ void deserialize_rembValueGet()
     RtcpPacket_t rtcpPacket;
     RtcpContext_t ctx;
     RtcpResult_t result;
-    size_t ssrcListLen = 0;
-    uint32_t mantissa;
-    uint8_t exponent;
+    RtcpRembPacket_t rembPacket;
     double maximumBitRate = 0;
     uint32_t * pSsrcList1, * pSsrcList2;
     uint8_t bufferNoUniqueIdentifier[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    //STATUS_RTCP_INPUT_REMB_INVALID
     uint8_t singleSSRC[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x52, 0x45, 0x4d, 0x42, 0x01, 0x12, 0x76, 0x28, 0x6c, 0x76, 0xe8, 0x55 };
     uint8_t multipleSSRC[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x52, 0x45, 0x4d, 0x42,
                                0x02, 0x12, 0x76, 0x28, 0x6c, 0x76, 0xe8, 0x55, 0x42, 0x42, 0x42, 0x42 };
     uint8_t invalidSSRCLength[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x52, 0x45,
-                                    0x4d, 0x42, 0xFF, 0x12, 0x76, 0x28, 0x6c, 0x76, 0xe8, 0x55 };
+                                    0x4d, 0x42, 0xFF, 0x12, 0x76, 0x28, 0x6c, 0x76, 0xe8, 0x55 }; 
+    //STATUS_RTCP_INPUT_REMB_INVALID
 
     memset( &rtcpPacket,
             0x00,
@@ -130,51 +137,48 @@ void deserialize_rembValueGet()
     result = Rtcp_Init( &ctx );
     assert( RTCP_RESULT_OK == result );
 
-    result = Rtcp_ParseRembPacket( &ctx,
-                                   bufferNoUniqueIdentifier,
-                                   sizeof( bufferNoUniqueIdentifier ),
-                                   &ssrcListLen,
-                                   &pSsrcList1,
-                                   &mantissa,
-                                   &exponent );
-    assert( result == RTCP_RESULT_INPUT_REMB_INVALID );
+    rembPacket.ssrcListLength = 20;
+    rembPacket.pSsrcList = malloc (rembPacket.ssrcListLength);
+
+    rtcpPacket.pPayload = bufferNoUniqueIdentifier;
+    rtcpPacket.payloadLength = sizeof( bufferNoUniqueIdentifier );
+    rtcpPacket.header.packetType = RTCP_PACKET_PAYLOAD_FEEDBACK_REMB;
 
     result = Rtcp_ParseRembPacket( &ctx,
-                                   singleSSRC,
-                                   sizeof( singleSSRC ),
-                                   &ssrcListLen,
-                                   &pSsrcList1,
-                                   &mantissa,
-                                   &exponent );
+                                   &rtcpPacket,
+                                   &rembPacket );
+    assert( result == RTCP_RESULT_MALFORMED_PACKET );
 
-    maximumBitRate = mantissa << exponent;
+    rtcpPacket.pPayload = singleSSRC;
+    rtcpPacket.payloadLength = sizeof( singleSSRC );
+    result = Rtcp_ParseRembPacket( &ctx,
+                                   &rtcpPacket,
+                                   &rembPacket );
     assert( RTCP_RESULT_OK == RTCP_RESULT_OK );
-    assert( ssrcListLen == 1 );
+    maximumBitRate = rembPacket.bitRateMantissa << rembPacket.bitRateExponent;
+    assert( rembPacket.ssrcListLength == 1 );
     assert( maximumBitRate == 2581120.0 );
-    assert( RTCP_READ_UINT32( ( uint8_t * )&( pSsrcList1[0] ) ) == 0x6c76e855 );
+    assert( rembPacket.pSsrcList[0] == 0x6c76e855 );
 
+    rembPacket.ssrcListLength = 20;
+    rtcpPacket.pPayload = multipleSSRC;
+    rtcpPacket.payloadLength = sizeof( multipleSSRC );
     result = Rtcp_ParseRembPacket( &ctx,
-                                   multipleSSRC,
-                                   sizeof( multipleSSRC ),
-                                   &ssrcListLen,
-                                   &pSsrcList2,
-                                   &mantissa,
-                                   &exponent );
-    maximumBitRate = mantissa << exponent;
+                                   &rtcpPacket,
+                                   &rembPacket );
+    maximumBitRate = rembPacket.bitRateMantissa << rembPacket.bitRateExponent;
     assert( RTCP_RESULT_OK == RTCP_RESULT_OK );
-    assert( ssrcListLen == 2 );
+    assert( rembPacket.ssrcListLength == 2 );
     assert( maximumBitRate == 2581120.0 );
-    assert( RTCP_READ_UINT32( ( uint8_t * )&( pSsrcList2[0] ) ) == 0x6c76e855 );
-    assert( RTCP_READ_UINT32( ( uint8_t * )&( pSsrcList2[1] ) ) == 0x42424242 );
+    assert( rembPacket.pSsrcList[0] == 0x6c76e855 );
+    assert( rembPacket.pSsrcList[1] == 0x42424242 );
 
+    rtcpPacket.pPayload = invalidSSRCLength;
+    rtcpPacket.payloadLength = sizeof( invalidSSRCLength );
     result = Rtcp_ParseRembPacket( &ctx,
-                                   invalidSSRCLength,
-                                   sizeof( invalidSSRCLength ),
-                                   &ssrcListLen,
-                                   &pSsrcList2,
-                                   &mantissa,
-                                   &exponent );
-    assert( RTCP_RESULT_INPUT_REMB_INVALID == result );
+                                   &rtcpPacket,
+                                   &rembPacket );
+    assert( RTCP_RESULT_OUT_OF_MEMORY == result );
 }
 /*-----------------------------------------------------------*/
 
@@ -186,7 +190,6 @@ void deserialize_senderReport()
     RtcpSenderReport_t senderReport;
     uint8_t payload[] = { 0x2c, 0x38, 0xaf, 0xd2, 0xe9, 0xf8, 0x11, 0x68, 0x33, 0x33, 0xe8,
                           0x64, 0x00, 0x03, 0x77, 0xca, 0x00, 0x00, 0x01, 0x4c, 0x00, 0x01, 0x0b, 0x2f };
-    size_t paylaodLength = sizeof( payload );
 
     memset( &senderReport,
             0x00,
@@ -195,17 +198,21 @@ void deserialize_senderReport()
     result = Rtcp_Init( &ctx );
     assert( RTCP_RESULT_OK == result );
 
+    rtcpPacket.pPayload = payload;
+    rtcpPacket.payloadLength = sizeof( payload );
+    rtcpPacket.header.packetType = RTCP_PACKET_SENDER_REPORT ;
+    rtcpPacket.header.receptionReportCount = 0;
+    
     result = Rtcp_ParseSenderReport( &ctx,
-                                     &( payload[0] ),
-                                     paylaodLength,
+                                     &rtcpPacket,
                                      &senderReport );
     assert( RTCP_RESULT_OK == result );
 
-    assert( senderReport.ssrc == 0x2c38afd2 );
-    assert( senderReport.ntpTime == 0xe9f811683333e864 );
-    assert( senderReport.rtpTime == 0x377ca );
-    assert( senderReport.octetCount == 0x10b2f );
-    assert( senderReport.packetCount == 0x14c );
+    assert( senderReport.senderSsrc == 0x2c38afd2 );
+    assert( senderReport.senderInfo.ntpTime == 0xe9f811683333e864 );
+    assert( senderReport.senderInfo.rtpTime == 0x377ca );
+    assert( senderReport.senderInfo.packetCount == 0x14c );
+    assert( senderReport.senderInfo.octetCount == 0x10b2f );
 }
 /*-----------------------------------------------------------*/
 
@@ -218,7 +225,6 @@ void deserialize_receiverReport()
 
     uint8_t payload[] = { 0x12, 0x34, 0x56, 0x78, 0x87, 0x65, 0x43, 0x21, 0x25, 0x00, 0x00, 0x01, // Fraction lost (25 in hex, approximately 10%)
                           0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x05 };
-    size_t paylaodLength = sizeof( payload );
 
     memset( &receiverReport,
             0x00,
@@ -227,20 +233,26 @@ void deserialize_receiverReport()
     result = Rtcp_Init( &ctx );
     assert( RTCP_RESULT_OK == result );
 
+    rtcpPacket.pPayload = payload;
+    rtcpPacket.payloadLength = sizeof( payload );
+    rtcpPacket.header.packetType = RTCP_PACKET_RECEIVER_REPORT;
+    rtcpPacket.header.receptionReportCount = 1;
+
+    receiverReport.numReceptionReports = 1;
+    receiverReport.pReceptionReports = malloc( sizeof(RtcpReceptionReport_t) );
     result = Rtcp_ParseReceiverReport( &ctx,
-                                       &( payload[0] ),
-                                       paylaodLength,
+                                       &rtcpPacket,
                                        &receiverReport );
     assert( RTCP_RESULT_OK == result );
 
-    assert( receiverReport.ssrcSender == 0x12345678 );
-    assert( receiverReport.ssrcSource == 0x87654321 );
-    assert( receiverReport.fractionLost == 0x25 );
-    assert( receiverReport.cumulativePacketsLost == 1 );
-    assert( receiverReport.extHiSeqNumReceived == 2 );
-    assert( receiverReport.interArrivalJitter == 3 );
-    assert( receiverReport.lastSR == 4 );
-    assert( receiverReport.delaySinceLastSR == 5 );
+    assert( receiverReport.senderSsrc == 0x12345678 );
+    assert( receiverReport.pReceptionReports->sourceSsrc == 0x87654321 );
+    assert( receiverReport.pReceptionReports->fractionLost == 0x25 );
+    assert( receiverReport.pReceptionReports->cumulativePacketsLost == 1 );
+    assert( receiverReport.pReceptionReports->extendedHighestSeqNumReceived == 2 );
+    assert( receiverReport.pReceptionReports->interArrivalJitter == 3 );
+    assert( receiverReport.pReceptionReports->lastSR == 4 );
+    assert( receiverReport.pReceptionReports->delaySinceLastSR == 5 );
 }
 /*-----------------------------------------------------------*/
 
@@ -254,7 +266,6 @@ void deserialize_nackPacket()
     // Assert that NACK list meets the minimum length requirement
     uint8_t nackListTooSmall[] = {0x00, 0x00, 0x00};
     uint8_t nackListMalformed[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    uint8_t nackListSsrcOnly[] = {0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0};
     uint8_t singlePID[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0xa8, 0x00, 0x00 };
     uint8_t compound[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0xa8, 0x00, 0x00, 0x0c, 0xff, 0x00, 0x02};
 
@@ -265,143 +276,59 @@ void deserialize_nackPacket()
     memset( &nackPacket,
             0x00,
             sizeof( RtcpNackPacket_t ) );
+    rtcpPacket.header.packetType = RTCP_PACKET_TRANSPORT_FEEDBACK_NACK;
 
+    rtcpPacket.pPayload = nackListTooSmall;
+    rtcpPacket.payloadLength = sizeof(nackListTooSmall);
     result = Rtcp_ParseNackPacket( &ctx,
-                                   &( nackListTooSmall[0] ),
-                                   sizeof( nackListTooSmall ),
+                                   &rtcpPacket,
                                    &nackPacket );
-    assert( RTCP_RESULT_INPUT_NACK_LIST_INVALID == result );
+    assert( RTCP_RESULT_BAD_PARAM == result );
 
     /* nackListMalformed Packet parsing */
-    memset( &nackPacket,
-            0x00,
-            sizeof( RtcpNackPacket_t ) );
+    rtcpPacket.pPayload = nackListTooSmall;
+    rtcpPacket.payloadLength = sizeof(nackListTooSmall);
     result = Rtcp_ParseNackPacket( &ctx,
-                                   &( nackListMalformed[0] ),
-                                   sizeof( nackListMalformed ),
+                                   &rtcpPacket,
                                    &nackPacket );
-    assert( RTCP_RESULT_INPUT_NACK_LIST_INVALID == result );
-
-    /* nackListSsrcOnly Packet parsing */
-    memset( &nackPacket,
-            0x00,
-            sizeof( RtcpNackPacket_t ) );
-    result = Rtcp_ParseNackPacket( &ctx,
-                                   &( nackListSsrcOnly[0] ),
-                                   sizeof( nackListSsrcOnly ),
-                                   &nackPacket );
-    assert( RTCP_RESULT_OK == result );
-    assert( nackPacket.ssrcSender == 0x2cd1a0de );
-    assert( nackPacket.ssrcSource == 0x0000abe0 );
+    assert( RTCP_RESULT_BAD_PARAM == result );
 
     /* singlePID Packet parsing */
-    memset( &nackPacket,
-            0x00,
-            sizeof( RtcpNackPacket_t ) );
+    rtcpPacket.pPayload = singlePID;
+    rtcpPacket.payloadLength = sizeof(singlePID);
     result = Rtcp_ParseNackPacket( &ctx,
-                                   &( singlePID[0] ),
-                                   sizeof( singlePID ),
+                                   &rtcpPacket,
                                    &nackPacket );
     assert( RTCP_RESULT_OK == result );
     assert( nackPacket.seqNumListLength == 1 );
 
     nackPacket.pSeqNumList = malloc( nackPacket.seqNumListLength * sizeof( uint16_t ) );
     result = Rtcp_ParseNackPacket( &ctx,
-                                   &( singlePID[0] ),
-                                   sizeof( singlePID ),
+                                   &rtcpPacket,
                                    &nackPacket );
     assert( RTCP_RESULT_OK == result );
     assert( nackPacket.pSeqNumList[0] == 3240 );
     free( nackPacket.pSeqNumList );
+    nackPacket.pSeqNumList = NULL;
 
     /* compound Packet parsing */
-    memset( &nackPacket,
-            0x00,
-            sizeof( RtcpNackPacket_t ) );
+    rtcpPacket.pPayload = compound;
+    rtcpPacket.payloadLength = sizeof(compound);
     result = Rtcp_ParseNackPacket( &ctx,
-                                   &( compound[0] ),
-                                   sizeof( compound ),
+                                   &rtcpPacket,
                                    &nackPacket );
     assert( RTCP_RESULT_OK == result );
     assert( nackPacket.seqNumListLength == 3 );
 
     nackPacket.pSeqNumList = malloc( nackPacket.seqNumListLength * sizeof( uint16_t ) );
     result = Rtcp_ParseNackPacket( &ctx,
-                                   &( compound[0] ),
-                                   sizeof( compound ),
+                                   &rtcpPacket,
                                    &nackPacket );
     assert( RTCP_RESULT_OK == result );
     assert( nackPacket.pSeqNumList[0] == 3240 );
     assert( nackPacket.pSeqNumList[1] == 3327 );
     assert( nackPacket.pSeqNumList[2] == 3329 );
     free( nackPacket.pSeqNumList );
-}
-/*-----------------------------------------------------------*/
-
-void deserialize_twccPacket()
-{
-    RtcpPacket_t rtcpPacket;
-    RtcpContext_t ctx;
-    RtcpResult_t result;
-    RtcpTwccPacket_t twccPacket;
-
-    uint8_t twccpayloadTooSmall[] = { 0x00, 0x00 };
-    uint8_t twccpayload1[] = { 0x44, 0x87, 0xa9, 0xe7, 0x54, 0xb3, 0xe6, 0xfd,
-                               0x01, 0x81, 0x00, 0x01, 0x14, 0x7a, 0x75, 0xa6, 0x20, 0x01, 0xc8, 0x01 };
-    uint8_t twccpayload2[] = { 0x44, 0x87, 0xa9, 0xe7, 0x54, 0xb3, 0xe6, 0xfd,
-                               0x12, 0x67, 0x00, 0x08, 0x14, 0x85, 0x60, 0xa8, 0xd6, 0x65, 0x20, 0x01,
-                               0x6c, 0x00, 0xfd, 0x78, 0x04, 0x02, 0x90, 0x28, 0x00, 0x04, 0x00, 0x02 };
-    uint8_t twccpayload3[] = { 0x44, 0x87, 0xa9, 0xe7, 0x54, 0xb3, 0xe6, 0xfd,
-                               0x04, 0x02, 0x00, 0xe4, 0x14, 0x7c, 0x9f, 0x81, 0x20, 0x27, 0x00, 0xb7,
-                               0xe6, 0x64, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                               0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00 };
-    result = Rtcp_Init( &ctx );
-    assert( RTCP_RESULT_OK == result );
-
-    /* twccpayloadTooSmall Packet parsing */
-    memset( &twccPacket,
-            0x00,
-            sizeof( RtcpTwccPacket_t ) );
-
-    result = Rtcp_ParseTwccPacket( &ctx,
-                                   &( twccpayloadTooSmall[0] ),
-                                   sizeof( twccpayloadTooSmall ),
-                                   &twccPacket );
-    assert( RTCP_RESULT_TWCC_INPUT_PACKET_INVALID == result );
-
-    /* twccpayload2 Packet parsing */
-    memset( &twccPacket,
-            0x00,
-            sizeof( RtcpTwccPacket_t ) );
-
-    result = Rtcp_ParseTwccPacket( &ctx,
-                                   &( twccpayload2[0] ),
-                                   sizeof( twccpayload2 ),
-                                   &twccPacket );
-    assert( RTCP_RESULT_OK == result );
-    assert( twccPacket.baseSeqNum == 0x1267 );
-    assert( twccPacket.packetStatusCount == 8 );
-    assert( twccPacket.referenceTime == 0x148560 );
-    assert( twccPacket.feedbackPacketCount == 0xa8 );
-    assert( twccPacket.pPacketChunkStart == &( twccpayload2[16] ) );
-    assert( twccPacket.pRecvDeltaStart == &( twccpayload2[20] ) );
-
-    /* twccpayload3 Packet parsing */
-    memset( &twccPacket,
-            0x00,
-            sizeof( RtcpTwccPacket_t ) );
-
-    result = Rtcp_ParseTwccPacket( &ctx,
-                                   &( twccpayload3[0] ),
-                                   sizeof( twccpayload3 ),
-                                   &twccPacket );
-    assert( RTCP_RESULT_OK == result );
-    assert( twccPacket.baseSeqNum == 0x402 );
-    assert( twccPacket.packetStatusCount == 0xe4 );
-    assert( twccPacket.referenceTime == 0x147c9f );
-    assert( twccPacket.feedbackPacketCount == 0x81 );
-    assert( twccPacket.pPacketChunkStart == &( twccpayload3[16] ) );
-    assert( twccPacket.pRecvDeltaStart == &( twccpayload3[22] ) );
 }
 /*-----------------------------------------------------------*/
 
@@ -429,25 +356,16 @@ void serialize_senderReport()
     result = Rtcp_Init( &ctx );
     assert( RTCP_RESULT_OK == result );
 
-    rtcpPacket.header.packetLength = 28;
-    rtcpPacket.header.packetType = RTCP_PACKET_TYPE_SENDER_REPORT;
-    rtcpPacket.header.padding = 0;
-    rtcpPacket.header.receptionReportCount = 0;
+    senderReport.numReceptionReports = 0;
+    senderReport.senderSsrc = 0x2c38afd2;
 
-    senderReport.ssrc = 0x2c38afd2;
-    senderReport.ntpTime = 0xe9f811683333e864;
-    senderReport.rtpTime = 0x377ca;
-    senderReport.octetCount = 0x10b2f;
-    senderReport.packetCount = 0x14c;
+    senderReport.senderInfo.ntpTime = 0xe9f811683333e864;
+    senderReport.senderInfo.rtpTime = 0x377ca;
+    senderReport.senderInfo.octetCount = 0x10b2f;
+    senderReport.senderInfo.packetCount = 0x14c;
 
-    result = Rtcp_CreatePayloadSenderReport( &ctx,
-                                             &rtcpPacket,
-                                             paylaodLength,
-                                             &senderReport );
-    assert( RTCP_RESULT_OK == result );
-
-    result = Rtcp_Serialize( &ctx,
-                             &rtcpPacket,
+    result = Rtcp_SerializeSenderReport( &ctx,
+                             &senderReport,
                              pBuffer,
                              &bufferLen );
 
@@ -467,7 +385,6 @@ int main( void )
     deserialize_senderReport();
     deserialize_receiverReport();
     deserialize_nackPacket();
-    deserialize_twccPacket();
 
     printf( "\nAll deserialize test PASS.\r\n" );
 
