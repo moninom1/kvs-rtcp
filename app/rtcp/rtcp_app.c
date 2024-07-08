@@ -377,6 +377,142 @@ void serialize_senderReport()
 }
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Validate RTCP twcc packet parsing containing only RTCP RUN_LENGTH_CHUNK.
+ */
+void twccParseTwccPacket( void )
+{
+    RtcpContext_t ctx;
+    RtcpResult_t result;
+    RtcpPacket_t rtcpPacket;
+    RtcpTwccPacket_t twccPacket;
+    uint8_t twccpayload[] = { 0x1c, 0x8c, 0x77, 0xb6, 0x3a, 0x1b, 0x46, 0x4a, 0x00, 0x11, 0x00, 0x08, 0x63, 0xe3,
+                              0x21, 0x01, 0x20, 0x08, 0xb3, 0x57, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4b, 0x00, 0x02 };
+    uint16_t expectedSeqNumList[] = {17, 18, 19, 20, 21, 22, 23, 24};
+
+    result = Rtcp_Init( &ctx );
+    assert( RTCP_RESULT_OK == result );
+
+    memset( &twccPacket,
+            0x00,
+            sizeof( RtcpTwccPacket_t ) );
+
+    rtcpPacket.header.packetType = RTCP_PACKET_TRANSPORT_FEEDBACK_TWCC;
+    rtcpPacket.pPayload = twccpayload;
+    rtcpPacket.payloadLength = sizeof(twccpayload);
+    twccPacket.arrivalInfoListLength = 0;
+    twccPacket.pArrivalInfoList = NULL;
+    result = Rtcp_ParseTwccPacket( &ctx,
+                                   &rtcpPacket,
+                                   &twccPacket );
+    assert( RTCP_RESULT_OK == result );
+    assert( twccPacket.arrivalInfoListLength == 8);
+    twccPacket.pArrivalInfoList = malloc( twccPacket.arrivalInfoListLength * sizeof(PacketArrivalInfo_t) );
+
+    result = Rtcp_ParseTwccPacket( &ctx,
+                                   &rtcpPacket,
+                                   &twccPacket );
+    assert( RTCP_RESULT_OK == result );
+    assert( twccPacket.baseSeqNum == 17 );
+
+    for( int i = 0; i < twccPacket.arrivalInfoListLength ; i++ )
+    {
+        assert( expectedSeqNumList[i] == twccPacket.pArrivalInfoList[i].seqNum );
+    }
+}
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Validate RTCP twcc packet parsing containing only RTCP RUN_LENGTH_CHUNK.
+ */
+void twccParseTwccPacket2( void )
+{
+    RtcpContext_t ctx;
+    RtcpResult_t result;
+    RtcpPacket_t rtcpPacket;
+    RtcpTwccPacket_t twccPacket;
+    uint8_t twccpayload[] = { 0xcb, 0x00, 0x18, 0x1a, 0x6d, 0x06, 0xec, 0xda, 0x00, 0xa5, 0x00, 0x0c, 0x64, 0x5e, 0x11, 0x0f, 0x20,
+                              0x0c, 0x84, 0x00, 0x00, 0x00, 0x00, 0x23, 0x50, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 };
+    uint16_t expectedSeqNumList[] = { 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176 };
+
+    result = Rtcp_Init( &ctx );
+    assert( RTCP_RESULT_OK == result );
+
+    memset( &twccPacket,
+            0x00,
+            sizeof( RtcpTwccPacket_t ) );
+
+    rtcpPacket.header.packetType = RTCP_PACKET_TRANSPORT_FEEDBACK_TWCC;
+    rtcpPacket.pPayload = twccpayload;
+    rtcpPacket.payloadLength = sizeof(twccpayload);
+    twccPacket.arrivalInfoListLength = 0;
+    twccPacket.pArrivalInfoList = NULL;
+    result = Rtcp_ParseTwccPacket( &ctx,
+                                   &rtcpPacket,
+                                   &twccPacket );
+    assert( RTCP_RESULT_OK == result );
+    assert( twccPacket.arrivalInfoListLength == 12);
+    twccPacket.pArrivalInfoList = malloc( twccPacket.arrivalInfoListLength * sizeof(PacketArrivalInfo_t) );
+
+    result = Rtcp_ParseTwccPacket( &ctx,
+                                   &rtcpPacket,
+                                   &twccPacket );
+    assert( RTCP_RESULT_OK == result );
+    assert( twccPacket.baseSeqNum == 165 );
+
+    for( int i = 0; i < twccPacket.arrivalInfoListLength ; i++ )
+    {
+        assert( expectedSeqNumList[i] == twccPacket.pArrivalInfoList[i].seqNum );
+    }
+}
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Validate RTCP twcc packet parsing containing both RTCP RUN_LENGTH_CHUNK,
+ *        & RTCP STATUS_VECTOR_CHUNK.
+ */
+void twccParseTwccPacket3( void )
+{
+    RtcpContext_t ctx;
+    RtcpResult_t result;
+    RtcpPacket_t rtcpPacket;
+    RtcpTwccPacket_t twccPacket;
+    uint8_t twccpayload[] = { 0xf2, 0x54, 0x58, 0xd3, 0x1f, 0x00, 0xc3, 0xe8, 0x2e, 0x1b, 0x00, 0x13, 0x7b, 0xa3, 0x64, 0xf1, 0x9f, 0xff, 0x20, 0x05,
+                              0x4e, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x52, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x02 };
+    uint16_t expectedSeqNumList[] = { 11803, 11804, 11805, 11806, 11807, 11808, 11809, 11810, 11811, 11812, 11813, 11814, 11815, 11816, 11817, 11818, 11819, 11820, 11821 };
+
+    result = Rtcp_Init( &ctx );
+    assert( RTCP_RESULT_OK == result );
+
+    memset( &twccPacket,
+            0x00,
+            sizeof( RtcpTwccPacket_t ) );
+
+    rtcpPacket.header.packetType = RTCP_PACKET_TRANSPORT_FEEDBACK_TWCC;
+    rtcpPacket.pPayload = twccpayload;
+    rtcpPacket.payloadLength = sizeof(twccpayload);
+    twccPacket.arrivalInfoListLength = 0;
+    twccPacket.pArrivalInfoList = NULL;
+    result = Rtcp_ParseTwccPacket( &ctx,
+                                   &rtcpPacket,
+                                   &twccPacket );
+    assert( RTCP_RESULT_OK == result );
+    assert( twccPacket.arrivalInfoListLength == 19 );
+    twccPacket.pArrivalInfoList = malloc( twccPacket.arrivalInfoListLength * sizeof(PacketArrivalInfo_t) );
+
+    result = Rtcp_ParseTwccPacket( &ctx,
+                                   &rtcpPacket,
+                                   &twccPacket );
+    assert( RTCP_RESULT_OK == result );
+    assert( twccPacket.baseSeqNum == 11803 );
+
+    for( int i = 0; i < twccPacket.arrivalInfoListLength ; i++ )
+    {
+        assert( expectedSeqNumList[i] == twccPacket.pArrivalInfoList[i].seqNum );
+    }
+}
+/*-----------------------------------------------------------*/
+
 int main( void )
 {
     deserialize_test1();
@@ -391,6 +527,12 @@ int main( void )
     serialize_senderReport();
 
     printf( "\nAll serialize test PASS.\r\n" );
+
+    twccParseTwccPacket();
+    twccParseTwccPacket2();
+    twccParseTwccPacket3();
+
+    printf( "\nAll TWCC parsing test PASS.\r\n" );
 
     return 0;
 }
