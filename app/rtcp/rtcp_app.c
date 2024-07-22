@@ -31,30 +31,30 @@ static void deserialize_test1( void )
 
     // Assert that we don't parse buffers that aren't even large enough
     uint8_t headerTooSmall[] = {0x00, 0x00, 0x00};
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                headerTooSmall,
                                sizeof( headerTooSmall ),
                                &rtcpPacket );
-    assert( RTCP_RESULT_BAD_PARAM == result );
+    assert( RTCP_RESULT_INPUT_PACKET_TOO_SMALL == result );
 
     // Assert that we check version field
     uint8_t invalidVersionValue[] = {0x01, 0xcd, 0x00, 0x03, 0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0, 0x00, 0xa4, 0x00, 0x00};
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                invalidVersionValue,
                                sizeof( invalidVersionValue ),
                                &rtcpPacket );
-    assert( RTCP_RESULT_MALFORMED_PACKET == result );
+    assert( RTCP_RESULT_WRONG_VERSION == result );
 
     // Assert that we check the length field
     uint8_t invalidLengthValue[] = {0x81, 0xcd, 0x00, 0x00, 0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0, 0x00, 0xa4, 0x00, 0x00};
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                invalidLengthValue,
                                sizeof( invalidLengthValue ),
                                &rtcpPacket );
     assert( RTCP_RESULT_OK == result );
 
     uint8_t validRtcpPacket[] = {0x81, 0xcd, 0x00, 0x03, 0x2c, 0xd1, 0xa0, 0xde, 0x00, 0x00, 0xab, 0xe0, 0x00, 0xa4, 0x00, 0x00};
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                validRtcpPacket,
                                sizeof( validRtcpPacket ),
                                &rtcpPacket );
@@ -85,7 +85,7 @@ static void deserialize_test2( void )
                                  0x12, 0x2d, 0x97, 0x0c, 0xef, 0x37, 0x0d, 0x2d, 0x07, 0x3d, 0x1d };
 
     int currentOffset = 0;
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                compoundPacket + currentOffset,
                                sizeof( compoundPacket ) - currentOffset,
                                &rtcpPacket );
@@ -93,7 +93,7 @@ static void deserialize_test2( void )
     assert( rtcpPacket.header.packetType == RTCP_PACKET_SENDER_REPORT );
 
     currentOffset += ( rtcpPacket.payloadLength + RTCP_HEADER_LENGTH );
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                compoundPacket + currentOffset,
                                sizeof( compoundPacket ) - currentOffset,
                                &rtcpPacket );
@@ -101,7 +101,7 @@ static void deserialize_test2( void )
     assert( rtcpPacket.header.packetType == RTCP_PACKET_UNKNOWN );
 
     currentOffset += ( rtcpPacket.payloadLength + RTCP_HEADER_LENGTH );
-    result = Rtcp_DeSerializePacket( &ctx,
+    result = Rtcp_DeserializePacket( &ctx,
                                compoundPacket + currentOffset,
                                sizeof( compoundPacket ) - currentOffset,
                                &rtcpPacket );
@@ -178,7 +178,7 @@ void deserialize_rembValueGet()
     result = Rtcp_ParseRembPacket( &ctx,
                                    &rtcpPacket,
                                    &rembPacket );
-    assert( RTCP_RESULT_OUT_OF_MEMORY == result );
+    assert( RTCP_RESULT_INPUT_REMB_PACKET_INVALID == result );
 }
 /*-----------------------------------------------------------*/
 
